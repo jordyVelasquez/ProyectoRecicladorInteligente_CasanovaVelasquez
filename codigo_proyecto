@@ -1,0 +1,238 @@
+//Diego Casanova
+//Jordy Velasquez
+//Sistemas Embebidos - Proyecto
+
+#include "apwifieeprommode.h"
+#include <Arduino.h>
+#include <EEPROM.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ESP32Servo.h> //Librería ServoMotores
+
+
+// -------------------- Contadores de reciclaje -------------------------------
+int contadorMetal = 0;
+int contadorPlastico = 0;
+int contadorPapel = 0;
+// -----------------------------------------------------------------------------
+
+// -------------------- ThingSpeak -------------------------------------------
+const char* thingSpeakAPI = "IO584REUYUIL0NEI";
+void enviarThingSpeak() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+
+    String url = "http://api.thingspeak.com/update?api_key=";
+    url += thingSpeakAPI;
+    url += "&field1=" + String(contadorMetal);
+    url += "&field2=" + String(contadorPlastico);
+    url += "&field3=" + String(contadorPapel);
+
+    http.begin(url);
+    http.GET();
+    http.end();
+
+    Serial.println("Datos enviados a ThingSpeak");
+  } else {
+    Serial.println("Sin WiFi, no se enviaron datos");
+  }
+}
+// -----------------------------------------------------------------------------
+
+// ------------------- Definiciones Sensor de Color -----------------------
+#define S0 25
+#define S1 26
+#define S2 32
+#define S3 33
+#define TCS_OUT 34   // Solo entrada
+// -----------------------------------------------------------------------------
+
+
+// ------------------- Definiciones Sensor Inductivo NPN -----------------------
+#define PIN_SENSOR_INDUCTIVO 18   // Entrada digital para el sensor NPN
+// -----------------------------------------------------------------------------
+
+
+
+// -------------------- Definiciones ServoMotor -------------------------------
+int posServo1 = 90;   // Posición inicial del clasificador
+int posServo2 = 90;    // Compuerta cerrada
+
+void moverServoSuave(Servo &servo, int &posActual, int posDestino) { //Movimiento Suave
+  if (posActual < posDestino) {
+    for (int i = posActual; i <= posDestino; i++) {
+      servo.write(i);
+      delay(10);
+    }
+  } else {
+    for (int i = posActual; i >= posDestino; i--) {
+      servo.write(i);
+      delay(10);
+    }
+  }
+  posActual = posDestino;
+}
+
+
+Servo servoMotor1;   // Crea el objeto servo
+int pinServo1 = 27;
+Servo servoMotor2;   // Crea el objeto servo
+int pinServo2 = 14;
+//Funciones de Movimiento (apertura y cierre de compuertas)
+
+//-----------------------------------------------------------------------------
+
+
+
+// -------------------- Mover Servo Metal -------------------------------
+void mover_servo_metal() {
+  // Servo 1 → Metal (180°)
+  moverServoSuave(servoMotor1, posServo1, 180);
+  delay(300);
+
+  // Abrir compuerta
+  moverServoSuave(servoMotor2, posServo2, 0);
+  delay(500);
+
+  // Cerrar compuerta
+  moverServoSuave(servoMotor2, posServo2, 90);
+}
+//-----------------------------------------------------------------------------
+
+
+
+// -------------------- Mover Servo Plástico -------------------------------
+void mover_servo_plastico() {
+  // Servo 1 → Plástico (90°)
+  moverServoSuave(servoMotor1, posServo1, 90);
+  delay(300);
+
+  // Abrir compuerta
+  moverServoSuave(servoMotor2, posServo2, 0);
+  delay(500);
+
+  // Cerrar compuerta
+  moverServoSuave(servoMotor2, posServo2, 90);
+}
+//-----------------------------------------------------------------------------
+
+
+
+// -------------------- Mover Servo Papel -------------------------------
+void mover_servo_papel() {
+  // Servo 1 → Papel (0°)
+  moverServoSuave(servoMotor1, posServo1, 0);
+  delay(300);
+
+  // Abrir compuerta
+  moverServoSuave(servoMotor2, posServo2, 0);
+  delay(500);
+
+  // Cerrar compuerta
+  moverServoSuave(servoMotor2, posServo2, 90);
+}
+//-----------------------------------------------------------------------------
+
+
+
+
+
+// ------------------------- SETUP --------------------------------------------
+void setup() {
+
+  Serial.begin(115200); // Se inicializa comunicación serial
+  intentoconexion("espgroup1", "12341243");  //  ACTIVA el WiFi guardado
+
+
+ // --------------------Inicialización sensor inductivo--------------------------------
+  pinMode(PIN_SENSOR_INDUCTIVO, INPUT);  
+  // NOTA: usas una resistencia pull-up externa a 3.3V → correcto para un NPN a 9V
+
+
+
+  // ------------------- Inicialización ServoMotores -------------------------------
+  servoMotor1.attach(pinServo1,500,2500); 
+  servoMotor2.attach(pinServo2,500,2500); 
+  servoMotor1.write(posServo1);
+  servoMotor2.write(posServo2);
+  
+  // ------------------- Inicialización Sensor color -------------------------------
+  pinMode(S0, OUTPUT);
+  pinMode(S1, OUTPUT);
+  pinMode(S2, OUTPUT);
+  pinMode(S3, OUTPUT);
+  pinMode(TCS_OUT, INPUT);
+  delay(1000);
+  Serial.println("Sensor de color TCS3200 iniciado");
+}
+//-----------------------------------------------------------------------------
+
+
+
+// ------------------------- LOOP --------------------------------------------
+void loop() {
+
+  delay(500); // Pequeña espera
+
+  //---------------------------- Lectura Sensor Inductivo -----------------------
+  int estadoInductivo = digitalRead(PIN_SENSOR_INDUCTIVO);
+
+  Serial.print("Sensor inductivo: ");
+  if (estadoInductivo == HIGH) {
+    Serial.println("NO detecta metal");
+  } else {
+    Serial.println("Detecta metal");
+
+    //  Si detecta metal, ejecuta movimiento correspondiente
+     mover_servo_metal();
+     contadorMetal++;          // contador
+     enviarThingSpeak();       // envío a la nube
+  }
+  // -----------------------------------------------------------------------------
+
+
+
+  //---------------------------- Lectura Sensor Color -----------------------------
+  
+  // ----- ROJO -----
+  digitalWrite(S2, LOW);
+  digitalWrite(S3, LOW);
+  unsigned long rojo = pulseIn(TCS_OUT, LOW);
+  delay(200);
+
+  // ----- VERDE -----
+  digitalWrite(S2, HIGH);
+  digitalWrite(S3, HIGH);
+  unsigned long verde = pulseIn(TCS_OUT, LOW);
+  delay(200);
+
+  // ----- AZUL -----
+  digitalWrite(S2, LOW);
+  digitalWrite(S3, HIGH);
+  unsigned long azul = pulseIn(TCS_OUT, LOW);
+  delay(200);
+
+  // Mostrar valores
+  Serial.print("R: ");
+  Serial.print(rojo);
+  Serial.print("\tV: ");
+  Serial.print(verde);
+  Serial.print("\tA: ");
+  Serial.println(azul);
+
+  if ( rojo > 40 && rojo < 50 && azul > 60 && azul < 75){    // plástico
+    Serial.println("Detecta plastico");       // muestra texto
+    mover_servo_plastico();
+    contadorPlastico++;
+    enviarThingSpeak();
+  } 
+    else if ( rojo > 55 && rojo < 65 && azul > 75 && azul < 85){  // papel
+    Serial.println("Detecta papel");        // muestra texto
+    mover_servo_papel();
+    contadorPapel++;
+    enviarThingSpeak();
+  }
+  
+  // -----------------------------------------------------------------------------
+
+}
