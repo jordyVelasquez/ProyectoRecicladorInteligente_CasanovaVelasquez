@@ -13,4 +13,4 @@ El código principal del microcontrolador se encuentra en el archivo 'codigo_pro
 ## Interfaz Web
 El monitoreo de datos se realiza a través de la plataforma IoT (ThingSpeak / Dashboard).
 Puedes ver el funcionamiento en el siguiente enlace:
-[[[](https://drive.google.com/file/d/15f8_D2k_AQmMlNEBjELimObP3hiGGuye/view?usp=sharing)]]
+https://drive.google.com/file/d/15f8_D2k_AQmMlNEBjELimObP3hiGGuye/view?usp=sharing
